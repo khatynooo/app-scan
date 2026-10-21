@@ -1,0 +1,84 @@
+name: Build Naghsh Jahan Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'NaghshJahanShare.rar'
+      - '.github/workflows/build-android-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install archive tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full unzip
+
+      - name: Extract Android project archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
+          if [ -z "$archive" ]; then
+            echo "::error::NaghshJahanShare.rar was not found in the repository."
+            exit 1
+          fi
+          mkdir -p extracted-project
+          7z x "$archive" "-o$PWD/extracted-project" -y
+          echo "Extracted files:"
+          find extracted-project -maxdepth 4 -type f | head -200
+
+      - name: Locate Gradle project
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(find "$PWD/extracted-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+          if [ -z "$root" ]; then
+            echo "::error::No settings.gradle or settings.gradle.kts found in the RAR. The archive may not contain a complete Android Gradle project."
+            exit 1
+          fi
+          echo "ANDROID_PROJECT_ROOT=$root" >> "$GITHUB_ENV"
+          echo "Project root: $root"
+          find "$root" -maxdepth 3 -type f | sort | head -200
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ANDROID_PROJECT_ROOT"
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon assembleDebug
+          else
+            gradle --no-daemon assembleDebug
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NaghshJahan-Android-APK
+          path: ${{ env.ANDROID_PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
