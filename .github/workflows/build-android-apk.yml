@@ -1,14 +1,11 @@
-```yaml
+
 name: Build Android APK
 
-on:
+"on":
   workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - "NaghshJahanShare.rar"
-      - ".github/workflows/build-android-apk.yml"
 
 permissions:
   contents: read
@@ -27,100 +24,64 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
-      - name: Extract Android project
+      - name: Extract project
         shell: bash
         run: |
-          set -euo pipefail
-
-          ARCHIVE="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
+          set -e
+          ARCHIVE="$(find . -type f -iname 'NaghshJahanShare.rar' -print -quit)"
 
           if [ -z "$ARCHIVE" ]; then
-            echo "::error::NaghshJahanShare.rar not found."
+            echo "ERROR: NaghshJahanShare.rar was not found"
             exit 1
           fi
 
           mkdir -p "$RUNNER_TEMP/android-project"
           7z x "$ARCHIVE" "-o$RUNNER_TEMP/android-project" -y
 
-      - name: Find Android Gradle project
+      - name: Find Android project
         shell: bash
         run: |
-          set -euo pipefail
-
-          PROJECT_ROOT="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+          set -e
+          PROJECT_ROOT="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
 
           if [ -z "$PROJECT_ROOT" ]; then
-            echo "::error::Gradle project not found in archive."
+            echo "ERROR: settings.gradle was not found in the archive"
+            find "$RUNNER_TEMP/android-project" -maxdepth 4 -type f
             exit 1
           fi
 
-          echo "ANDROID_PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT_ROOT"
+          echo "ANDROID_PROJECT_ROOT=$(dirname "$PROJECT_ROOT")" >> "$GITHUB_ENV"
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: "platform-tools"
-
-      - name: Install Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.14.3"
 
-      - name: Prepare JVM compatibility fix
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > "$RUNNER_TEMP/android-jvm-target.gradle" <<'GRADLE'
-          allprojects {
-              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
-                  sourceCompatibility = '17'
-                  targetCompatibility = '17'
-              }
-          }
-          GRADLE
-
       - name: Build APK
         shell: bash
         run: |
-          set -euo pipefail
-
+          set -e
           cd "$ANDROID_PROJECT_ROOT"
 
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew --no-daemon assembleDebug
           else
-            gradle --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
+            gradle --no-daemon assembleDebug
           fi
-
-      - name: Locate APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$(find "$ANDROID_PROJECT_ROOT" -type f -path '*/build/outputs/apk/*/*.apk' -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::APK file was not generated."
-            exit 1
-          fi
-
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-          echo "APK generated: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NaghshJahan-Android-APK
-          path: ${{ env.APK_PATH }}
+          path: |
+            ${{ env.ANDROID_PROJECT_ROOT }}/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
 ```
