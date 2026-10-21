@@ -34,7 +34,7 @@ jobs:
           ARCHIVE="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
 
           if [ -z "$ARCHIVE" ]; then
-            echo "::error::NaghshJahanShare.rar not found in the repository."
+            echo "::error::NaghshJahanShare.rar not found."
             exit 1
           fi
 
@@ -49,21 +49,23 @@ jobs:
           PROJECT_ROOT="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
 
           if [ -z "$PROJECT_ROOT" ]; then
-            echo "::error::Android Gradle project not found inside the archive."
+            echo "::error::Gradle project not found in archive."
             exit 1
           fi
 
           echo "ANDROID_PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Android project: $PROJECT_ROOT"
+          echo "Found project: $PROJECT_ROOT"
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       - name: Prepare JVM compatibility fix
         shell: bash
@@ -89,10 +91,8 @@ jobs:
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
             ./gradlew --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
-          elif command -v gradle >/dev/null 2>&1; then
-            gradle --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
           else
-            echo "::error::Gradle wrapper is missing and Gradle is not installed."
+            echo "::error::Gradle wrapper gradlew is missing."
             exit 1
           fi
 
