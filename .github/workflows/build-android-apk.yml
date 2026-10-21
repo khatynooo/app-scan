@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 "on":
@@ -26,7 +27,7 @@ jobs:
       - name: Extract project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           ARCHIVE="$(find . -type f -iname 'NaghshJahanShare.rar' -print -quit)"
 
           if [ -z "$ARCHIVE" ]; then
@@ -40,19 +41,21 @@ jobs:
       - name: Find Android project
         shell: bash
         run: |
-          set -e
-          PROJECT_ROOT="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+          set -euo pipefail
+          SETTINGS_FILE="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
 
-          if [ -z "$PROJECT_ROOT" ]; then
-            echo "ERROR: settings.gradle was not found in the archive"
-            find "$RUNNER_TEMP/android-project" -maxdepth 4 -type f
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android settings file was not found"
+            find "$RUNNER_TEMP/android-project" -maxdepth 5 -type f | head -200
             exit 1
           fi
 
-          echo "ANDROID_PROJECT_ROOT=$(dirname "$PROJECT_ROOT")" >> "$GITHUB_ENV"
+          PROJECT_ROOT="$(dirname "$SETTINGS_FILE")"
+          echo "ANDROID_PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          echo "Android project root: $PROJECT_ROOT"
 
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -62,17 +65,36 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      - name: Align Java and Kotlin JVM targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/align-jvm-targets.gradle" <<'GRADLE'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                  sourceCompatibility = '17'
+                  targetCompatibility = '17'
+              }
+
+              tasks.configureEach { task ->
+                  if (task.class.name.contains('KotlinCompile') && task.hasProperty('kotlinOptions')) {
+                      task.kotlinOptions.jvmTarget = '17'
+                  }
+              }
+          }
+          GRADLE
+
       - name: Build APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           cd "$ANDROID_PROJECT_ROOT"
 
           if [ -f gradlew ]; then
             chmod +x gradlew
-            ./gradlew --no-daemon assembleDebug
+            ./gradlew --no-daemon --stacktrace --init-script "$RUNNER_TEMP/align-jvm-targets.gradle" assembleDebug
           else
-            gradle --no-daemon assembleDebug
+            gradle --no-daemon --stacktrace --init-script "$RUNNER_TEMP/align-jvm-targets.gradle" assembleDebug
           fi
 
       - name: Upload APK
