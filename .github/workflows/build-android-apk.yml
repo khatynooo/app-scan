@@ -1,3 +1,4 @@
+```yaml
 name: Build Android APK
 
 on:
@@ -67,6 +68,11 @@ jobs:
         with:
           packages: "platform-tools"
 
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
       - name: Prepare JVM compatibility fix
         shell: bash
         run: |
@@ -92,14 +98,29 @@ jobs:
             chmod +x ./gradlew
             ./gradlew --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
           else
-            echo "::error::Gradle wrapper gradlew is missing."
+            gradle --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
+          fi
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$(find "$ANDROID_PROJECT_ROOT" -type f -path '*/build/outputs/apk/*/*.apk' -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "::error::APK file was not generated."
             exit 1
           fi
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "APK generated: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NaghshJahan-Android-APK
-          path: ${{ env.ANDROID_PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
           retention-days: 14
+```
