@@ -1,3 +1,4 @@
+
 name: Build Naghsh Jahan Android APK
 
 on:
@@ -13,6 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,13 +28,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           archive="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
+
           if [ -z "$archive" ]; then
             echo "::error::NaghshJahanShare.rar was not found in the repository."
             exit 1
           fi
+
           mkdir -p extracted-project
           7z x "$archive" "-o$PWD/extracted-project" -y
+
           echo "Extracted files:"
           find extracted-project -maxdepth 4 -type f | head -200
 
@@ -40,13 +46,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           root="$(find "$PWD/extracted-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+
           if [ -z "$root" ]; then
             echo "::error::No settings.gradle or settings.gradle.kts found in the RAR. The archive may not contain a complete Android Gradle project."
             exit 1
           fi
+
           echo "ANDROID_PROJECT_ROOT=$root" >> "$GITHUB_ENV"
           echo "Project root: $root"
+
           find "$root" -maxdepth 3 -type f | sort | head -200
 
       - name: Set up Java
@@ -57,6 +67,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          tools: ''
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -67,7 +79,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$ANDROID_PROJECT_ROOT"
+
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew --no-daemon assembleDebug
