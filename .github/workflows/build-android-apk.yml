@@ -1,4 +1,4 @@
-
+```yaml
 name: Build Naghsh Jahan Android APK
 
 on:
@@ -50,7 +50,7 @@ jobs:
           root="$(find "$PWD/extracted-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
 
           if [ -z "$root" ]; then
-            echo "::error::No settings.gradle or settings.gradle.kts found in the RAR. The archive may not contain a complete Android Gradle project."
+            echo "::error::No settings.gradle or settings.gradle.kts found in the RAR."
             exit 1
           fi
 
@@ -75,18 +75,33 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Align Java and Kotlin JVM targets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/android-jvm-target.gradle" <<'GRADLE'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                  sourceCompatibility = '17'
+                  targetCompatibility = '17'
+              }
+          }
+          GRADLE
+
       - name: Build debug APK
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$ANDROID_PROJECT_ROOT"
+          INIT_SCRIPT="$RUNNER_TEMP/android-jvm-target.gradle"
 
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew --no-daemon assembleDebug
+            ./gradlew --no-daemon --init-script "$INIT_SCRIPT" assembleDebug
           else
-            gradle --no-daemon assembleDebug
+            gradle --no-daemon --init-script "$INIT_SCRIPT" assembleDebug
           fi
 
       - name: Upload APK
@@ -96,3 +111,4 @@ jobs:
           path: ${{ env.ANDROID_PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+```
