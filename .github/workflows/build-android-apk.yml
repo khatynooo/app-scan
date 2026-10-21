@@ -1,18 +1,20 @@
-```yaml
-name: Build Naghsh Jahan Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
-      - 'NaghshJahanShare.rar'
-      - '.github/workflows/build-android-apk.yml'
+      - "NaghshJahanShare.rar"
+      - ".github/workflows/build-android-apk.yml"
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
@@ -22,60 +24,48 @@ jobs:
       - name: Install archive tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full unzip
+          sudo apt-get install -y p7zip-full
 
-      - name: Extract Android project archive
+      - name: Extract Android project
         shell: bash
         run: |
           set -euo pipefail
 
-          archive="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
+          ARCHIVE="$(find . -maxdepth 4 -type f -iname 'NaghshJahanShare.rar' -print -quit)"
 
-          if [ -z "$archive" ]; then
-            echo "::error::NaghshJahanShare.rar was not found in the repository."
+          if [ -z "$ARCHIVE" ]; then
+            echo "::error::NaghshJahanShare.rar not found in the repository."
             exit 1
           fi
 
-          mkdir -p extracted-project
-          7z x "$archive" "-o$PWD/extracted-project" -y
+          mkdir -p "$RUNNER_TEMP/android-project"
+          7z x "$ARCHIVE" "-o$RUNNER_TEMP/android-project" -y
 
-          echo "Extracted files:"
-          find extracted-project -maxdepth 4 -type f | head -200
-
-      - name: Locate Gradle project
+      - name: Find Android Gradle project
         shell: bash
         run: |
           set -euo pipefail
 
-          root="$(find "$PWD/extracted-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+          PROJECT_ROOT="$(find "$RUNNER_TEMP/android-project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
 
-          if [ -z "$root" ]; then
-            echo "::error::No settings.gradle or settings.gradle.kts found in the RAR."
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "::error::Android Gradle project not found inside the archive."
             exit 1
           fi
 
-          echo "ANDROID_PROJECT_ROOT=$root" >> "$GITHUB_ENV"
-          echo "Project root: $root"
+          echo "ANDROID_PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          echo "Android project: $PROJECT_ROOT"
 
-          find "$root" -maxdepth 3 -type f | sort | head -200
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Align Java and Kotlin JVM targets
+      - name: Prepare JVM compatibility fix
         shell: bash
         run: |
           set -euo pipefail
@@ -89,19 +79,21 @@ jobs:
           }
           GRADLE
 
-      - name: Build debug APK
+      - name: Build APK
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$ANDROID_PROJECT_ROOT"
-          INIT_SCRIPT="$RUNNER_TEMP/android-jvm-target.gradle"
 
-          if [ -f ./gradlew ]; then
+          if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew --no-daemon --init-script "$INIT_SCRIPT" assembleDebug
+            ./gradlew --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
+          elif command -v gradle >/dev/null 2>&1; then
+            gradle --no-daemon --init-script "$RUNNER_TEMP/android-jvm-target.gradle" assembleDebug
           else
-            gradle --no-daemon --init-script "$INIT_SCRIPT" assembleDebug
+            echo "::error::Gradle wrapper is missing and Gradle is not installed."
+            exit 1
           fi
 
       - name: Upload APK
@@ -111,4 +103,3 @@ jobs:
           path: ${{ env.ANDROID_PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
-```
